@@ -1,0 +1,9 @@
+{
+	"appId": "com.vncresolver.app",
+	"appName": "VNC Resolver",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https",
+		"cleartext": true
+	}
+}

@@ -1,0 +1,6 @@
+{
+  "name": "VNC Resolver",
+  "description": "Fast, modern dataset explorer and metadata research tool for the Computernewb VNC Resolver database.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
