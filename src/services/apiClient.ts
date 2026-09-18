@@ -13,21 +13,34 @@ interface CacheItem<T> {
 }
 
 /**
- * Resolve API URL for both web browser and Capacitor/Android native environments
+ * Check if running inside Capacitor or native Android/iOS wrapper
+ */
+export function isNativeMobile(): boolean {
+  if (typeof window === 'undefined') return false;
+  return Boolean(
+    (window as any)?.Capacitor?.isNativePlatform?.() ||
+    window.location.protocol === 'capacitor:' ||
+    window.location.protocol === 'file:' ||
+    (window.location.hostname === 'localhost' && !window.location.port && window.location.protocol.startsWith('http'))
+  );
+}
+
+/**
+ * Resolve API URL for both web browser and Capacitor/Android native environments.
+ * On Android, if no custom server is specified, connects directly to Computernewb.com (CORS enabled).
  */
 export function resolveApiUrl(path: string): string {
   if (typeof window !== 'undefined') {
-    const isCapacitor = Boolean(
-      (window as any)?.Capacitor?.isNativePlatform?.() ||
-      window.location.protocol === 'capacitor:' ||
-      window.location.protocol === 'file:' ||
-      (window.location.hostname === 'localhost' && !window.location.port && window.location.protocol.startsWith('http'))
-    );
-    if (isCapacitor) {
-      const customUrl = localStorage.getItem('vnc_custom_server_url');
-      if (customUrl) return `${customUrl.replace(/\/$/, '')}${path}`;
-      const defaultServer = (import.meta as any).env?.VITE_SERVER_URL || 'https://ais-pre-hhdy5enkz2akp3vhfwaefk-101858379035.asia-east1.run.app';
-      return `${defaultServer.replace(/\/$/, '')}${path}`;
+    const customUrl = localStorage.getItem('vnc_custom_server_url');
+    if (customUrl && customUrl.trim()) {
+      return `${customUrl.trim().replace(/\/$/, '')}${path}`;
+    }
+
+    if (isNativeMobile()) {
+      if (path.startsWith('/api/proxy/')) {
+        const subPath = path.replace(/^\/api\/proxy\//, '');
+        return `https://computernewb.com/vncresolver/api/v1/${subPath}`;
+      }
     }
   }
   return path;
@@ -135,10 +148,26 @@ class VncRepository {
             throw new Error('Request cancelled');
           }
 
-          const response = await fetch(resolveApiUrl(endpoint), {
-            signal: abortSignal,
-            headers: { Accept: 'application/json' },
-          });
+          const targetUrl = resolveApiUrl(endpoint);
+          let response: Response;
+          try {
+            response = await fetch(targetUrl, {
+              signal: abortSignal,
+              headers: { Accept: 'application/json' },
+            });
+          } catch (networkErr: any) {
+            // Automatic failover: If the primary request failed with network error / Failed to fetch,
+            // and it was trying a proxy path or custom server, immediately attempt direct Computernewb fallback!
+            if (endpoint.startsWith('/api/proxy/') && !targetUrl.includes('computernewb.com')) {
+              const fallbackUrl = `https://computernewb.com/vncresolver/api/v1/${endpoint.replace(/^\/api\/proxy\//, '')}`;
+              response = await fetch(fallbackUrl, {
+                signal: abortSignal,
+                headers: { Accept: 'application/json' },
+              });
+            } else {
+              throw networkErr;
+            }
+          }
 
           const durationMs = Date.now() - startTime;
 
@@ -270,11 +299,25 @@ class VncRepository {
 
     const startTime = Date.now();
     try {
-      const url = resolveApiUrl(connectable ? '/api/proxy/random?connectable=true' : '/api/proxy/random');
-      const res = await fetch(url, {
-        signal,
-        headers: { Accept: 'application/json' },
-      });
+      let url = resolveApiUrl(connectable ? '/api/proxy/random?connectable=true' : '/api/proxy/random');
+      // If querying Computernewb directly, the official endpoint is /api/v1/random
+      if (url.includes('computernewb.com')) {
+        url = 'https://computernewb.com/vncresolver/api/v1/random';
+      }
+
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          signal,
+          headers: { Accept: 'application/json' },
+        });
+      } catch (netErr) {
+        // Fallback to direct official API if local proxy failed
+        res = await fetch('https://computernewb.com/vncresolver/api/v1/random', {
+          signal,
+          headers: { Accept: 'application/json' },
+        });
+      }
       const durationMs = Date.now() - startTime;
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -386,6 +429,16 @@ class VncRepository {
    * Calls /api/check?ip=...&port=...
    */
   public async checkLiveConnection(ip: string, port: number, signal?: AbortSignal): Promise<LiveCheckResult> {
+    const customServer = typeof window !== 'undefined' ? localStorage.getItem('vnc_custom_server_url') : null;
+    if (isNativeMobile() && !customServer) {
+      return {
+        status: 'unavailable',
+        tcpConnected: false,
+        rfbHandshake: false,
+        error: 'Live TCP port test requires Bridge Server URL (configurable in Settings)',
+        checkedAt: Date.now(),
+      };
+    }
     try {
       const res = await fetch(resolveApiUrl(`/api/check?ip=${encodeURIComponent(ip)}&port=${encodeURIComponent(port)}`), {
         signal,
@@ -421,6 +474,10 @@ class VncRepository {
     signal?: AbortSignal
   ): Promise<Record<string | number, LiveCheckResult>> {
     if (targets.length === 0) return {};
+    const customServer = typeof window !== 'undefined' ? localStorage.getItem('vnc_custom_server_url') : null;
+    if (isNativeMobile() && !customServer) {
+      return {};
+    }
     try {
       const res = await fetch(resolveApiUrl('/api/check-batch'), {
         method: 'POST',
@@ -445,6 +502,11 @@ class VncRepository {
    * AI-powered Natural Language Prompt Parsing
    */
   public async parsePromptAI(prompt: string): Promise<any> {
+    const customServer = typeof window !== 'undefined' ? localStorage.getItem('vnc_custom_server_url') : null;
+    if (isNativeMobile() && !customServer) {
+      // Use local regex & keyword engine immediately
+      return null;
+    }
     try {
       const res = await fetch(resolveApiUrl('/api/ai/parse-prompt'), {
         method: 'POST',

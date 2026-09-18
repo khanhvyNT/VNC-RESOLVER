@@ -27,6 +27,15 @@ Dự án này đã được cấu hình sẵn 2 phiên bản Android hoàn chỉ
    - File APK tạo ra tại đường dẫn: `android/app/build/outputs/apk/debug/app-debug.apk`.
    - Copy file này sang điện thoại Android hoặc cài thẳng vào máy ảo (Emulator).
 
+### 💡 Lưu ý về lỗi "Failed to fetch" trên Android đã được khắc phục:
+- **Nguyên nhân**: Ban đầu ứng dụng cố gọi qua proxy backend container Cloud Run (`ais-pre-...run.app`). Thiết bị Android bên ngoài không có cookie phiên của Google AI Studio nên bị chặn hoặc lỗi CORS gây ra `Failed to fetch`.
+- **Giải pháp đã triển khai**:
+  1. Kích hoạt plugin native **`CapacitorHttp`** trong `capacitor.config.ts` để bypass toàn bộ giới hạn mạng của WebView.
+  2. Tự động chuyển hướng các lệnh gọi API (`/search`, `/stats`, `/random`, `/id`) trực tiếp đến server chính thức **`https://computernewb.com/vncresolver/api/v1/`** (đã bật sẵn `Access-Control-Allow-Origin: *`).
+  3. Bổ sung cơ chế **Failover tự động**: nếu bất kỳ request nào gặp lỗi mạng, app sẽ lập tức fallback sang kết nối trực tiếp đến Computernewb.
+  4. Trong giao diện app (nút **Diagnostics & Telemetry** ở thanh header), bạn có thể nhập URL Bridge Server tùy chỉnh nếu triển khai server Node riêng.
+  5. Cập nhật lại bản build: Bạn chỉ cần vào thư mục `android/` và chạy lại `./gradlew assembleDebug` (hoặc nhấn Rebuild trong Android Studio) là APK mới sẽ hoạt động mượt mà ngay lập tức!
+
 ---
 
 ## 🚀 Lựa chọn 2: 100% Native Android (Kotlin + Jetpack Compose)

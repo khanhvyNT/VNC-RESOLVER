@@ -8,9 +8,12 @@ import {
   AlertTriangle,
   Zap,
   HardDrive,
+  Server,
+  Globe,
+  Check,
 } from 'lucide-react';
 import { ApiDiagnosticEntry } from '../types';
-import { vncRepo } from '../services/apiClient';
+import { vncRepo, isNativeMobile } from '../services/apiClient';
 
 interface ApiDiagnosticsModalProps {
   isOpen: boolean;
@@ -20,9 +23,14 @@ interface ApiDiagnosticsModalProps {
 export const ApiDiagnosticsModal: React.FC<ApiDiagnosticsModalProps> = ({ isOpen, onClose }) => {
   const [logs, setLogs] = useState<ApiDiagnosticEntry[]>([]);
   const [cacheStats, setCacheStats] = useState<{ size: number; keys: string[] }>({ size: 0, keys: [] });
+  const [customServerUrl, setCustomServerUrl] = useState('');
+  const [serverSaved, setServerSaved] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
+
+    const savedUrl = localStorage.getItem('vnc_custom_server_url') || '';
+    setCustomServerUrl(savedUrl);
 
     setCacheStats(vncRepo.getCacheStats());
     const unsubscribe = vncRepo.subscribeDiagnostics((newLogs) => {
@@ -34,6 +42,24 @@ export const ApiDiagnosticsModal: React.FC<ApiDiagnosticsModalProps> = ({ isOpen
   }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const handleSaveServer = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (customServerUrl.trim()) {
+      localStorage.setItem('vnc_custom_server_url', customServerUrl.trim());
+    } else {
+      localStorage.removeItem('vnc_custom_server_url');
+    }
+    setServerSaved(true);
+    setTimeout(() => setServerSaved(false), 2000);
+  };
+
+  const handleResetServer = () => {
+    localStorage.removeItem('vnc_custom_server_url');
+    setCustomServerUrl('');
+    setServerSaved(true);
+    setTimeout(() => setServerSaved(false), 2000);
+  };
 
   const handleClearCache = () => {
     vncRepo.clearCache();
@@ -90,6 +116,50 @@ export const ApiDiagnosticsModal: React.FC<ApiDiagnosticsModalProps> = ({ isOpen
               <X className="w-5 h-5" />
             </button>
           </div>
+        </div>
+
+        {/* Connection Mode & Server Settings */}
+        <div className="px-6 py-3 bg-zinc-950/60 border-b border-zinc-800 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-mono">
+          <div className="flex items-center gap-2">
+            <Server className="w-4 h-4 text-cyan-400" />
+            <span className="text-zinc-400">Mode:</span>
+            {isNativeMobile() ? (
+              <span className="px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 font-semibold">
+                Android APK (Direct computernewb.com CORS)
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded bg-cyan-950/80 text-cyan-400 border border-cyan-800/60 font-semibold">
+                Web Server & Backend Proxy
+              </span>
+            )}
+          </div>
+
+          <form onSubmit={handleSaveServer} className="flex items-center gap-2">
+            <span className="text-zinc-400 hidden sm:inline">Bridge URL:</span>
+            <input
+              type="text"
+              value={customServerUrl}
+              onChange={(e) => setCustomServerUrl(e.target.value)}
+              placeholder="https://... (optional)"
+              className="bg-zinc-900 border border-zinc-700 rounded px-2.5 py-1 text-zinc-100 text-xs focus:outline-none focus:border-cyan-500 w-48 placeholder:text-zinc-600 font-mono"
+            />
+            <button
+              type="submit"
+              className="px-2.5 py-1 rounded bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs transition flex items-center gap-1"
+            >
+              {serverSaved ? <Check className="w-3 h-3" /> : null}
+              {serverSaved ? 'Saved' : 'Save'}
+            </button>
+            {customServerUrl && (
+              <button
+                type="button"
+                onClick={handleResetServer}
+                className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 text-xs transition"
+              >
+                Reset
+              </button>
+            )}
+          </form>
         </div>
 
         {/* Cache Summary Cards */}
